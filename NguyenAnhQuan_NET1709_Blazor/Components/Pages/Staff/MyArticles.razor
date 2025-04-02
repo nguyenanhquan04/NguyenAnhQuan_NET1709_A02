@@ -1,0 +1,152 @@
+﻿@page "/staff/myarticles"
+@inject ISessionStorageService SessionStorage
+@inject NavigationManager Navigation
+@inject INewsArticleRepository NewsArticleRepository
+@inject ISystemAccountRepository AccountRepo
+@rendermode InteractiveServer
+
+@if (IsAuthorized)
+{
+    <div class="container mt-4">
+        <h1>My Articles</h1>
+
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Id</th>
+                    <th>Title</th>
+                    <th>Headline</th>
+                    <th>Created Date</th>
+                    <th>Created By</th>
+                    <th>Modified Date</th>
+                    <th>Updated By</th>
+                    <th>Category Name</th>
+                    <th>News Status</th>
+                    <th>News Source</th>
+                    <th>Tags</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var article in NewsArticles)
+                {
+                    <tr>
+                        <td>@article.NewsArticleId</td>
+                        <td>@article.NewsTitle</td>
+                        <td>@article.Headline</td>
+                        <td>@article.CreatedDate?.ToString("yyyy-MM-dd")</td>
+                        <td>@article.CreatedBy?.AccountName</td>
+                        <td>@article.ModifiedDate?.ToString("yyyy-MM-dd")</td>
+                        <td>@(UpdatedByNames.ContainsKey(article.UpdatedById ?? 0) ? UpdatedByNames[article.UpdatedById.Value] : "Unknown")</td>
+                        <td>@article.Category?.CategoryName</td>
+                        <td>@(article.NewsStatus.HasValue && article.NewsStatus.Value ? "Active" : "Inactive")</td>
+
+                        <td>@article.NewsSource</td>
+                        <td>
+                            @if (article.Tags?.Any() == true)
+                            {
+                                @foreach (var tag in article.Tags)
+                                {
+                                    <span class="badge bg-primary">@tag.TagName</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">No tags</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="d-flex justify-content-between">
+            <button class="btn btn-outline-primary" @onclick="PrevPage" disabled="@(!HasPrevPage)">Prev</button>
+            <button class="btn btn-outline-primary" @onclick="NextPage" disabled="@(!HasNextPage)">Next</button>
+        </div>
+        <button class="btn btn-secondary mb-3" @onclick="NavigateBack">
+            <i class="bi bi-arrow-left"></i> Back to Navigate
+        </button>
+
+    </div>
+}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
+@code {
+    private bool IsAuthorized = false;
+    private List<NewsArticle> NewsArticles = new();
+    private Dictionary<short, string> UpdatedByNames = new();
+    private int CurrentPage = 1;
+    private int TotalPages;
+    private const int PageSize = 4;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var accountRole = await SessionStorage.GetItemAsync<int?>("AccountRole");
+            if (accountRole != 1)
+            {
+                Navigation.NavigateTo("/error");
+            }
+            else
+            {
+                IsAuthorized = true;
+                await LoadArticles();
+                StateHasChanged();
+            }
+        }
+    }
+    private void NavigateBack()
+    {
+        Navigation.NavigateTo("/staff");
+    }
+
+    private async Task LoadArticles()
+    {
+        var creatorId = await SessionStorage.GetItemAsync<int?>("AccountId");
+        if (creatorId.HasValue)
+        {
+            var (articles, totalPages) = await NewsArticleRepository.GetPaginatedArticlesByCreatorIdAsync((short)creatorId.Value, CurrentPage, PageSize);
+            NewsArticles = articles;
+            TotalPages = totalPages;
+            var updatedByIds = NewsArticles
+                .Where(a => a.UpdatedById.HasValue)
+                .Select(a => a.UpdatedById.Value)
+                .Distinct()
+                .ToList();
+
+            UpdatedByNames.Clear();
+            foreach (var id in updatedByIds)
+            {
+                var account = await AccountRepo.GetAccountById(id);
+                UpdatedByNames[id] = account?.AccountName ?? "Unknown";
+            }
+        }
+    }
+
+
+
+    private bool HasPrevPage => CurrentPage > 1;
+    private bool HasNextPage => CurrentPage < TotalPages;
+
+    private async Task PrevPage()
+    {
+        if (HasPrevPage)
+        {
+            CurrentPage--;
+            await LoadArticles();
+            StateHasChanged();
+        }
+    }
+
+    private async Task NextPage()
+    {
+        if (HasNextPage)
+        {
+            CurrentPage++;
+            await LoadArticles();
+            StateHasChanged();
+        }
+    }
+}

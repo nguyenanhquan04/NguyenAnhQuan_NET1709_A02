@@ -1,0 +1,111 @@
+﻿@page "/login"
+@using Microsoft.AspNetCore.Components.Authorization
+@using NguyenAnhQuan_NET1709_Blazor.Services
+@inject ISystemAccountRepository AccountRepository
+@inject IConfiguration Configuration
+@inject NavigationManager Navigation
+@inject ISessionStorageService SessionStorage
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<h1>Login</h1>
+
+<EditForm Model="@loginModel" OnValidSubmit="@HandleLogin" FormName="LoginForm">
+  
+
+    <div class="form-group">
+        <label for="email">Email:</label>
+        <InputText id="email" @bind-Value="loginModel.Email" type="email" class="form-control" />
+      
+    </div>
+
+    <div class="form-group">
+        <label for="password">Password:</label>
+        <InputText id="password" @bind-Value="loginModel.Password" type="password" class="form-control" />
+      
+    </div>
+
+    <div class="form-group mt-3">
+        <button type="submit" class="btn btn-primary">Login</button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-3">@errorMessage</div>
+    }
+</EditForm>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
+@code {
+    private LoginModel loginModel = new LoginModel();
+    private string? errorMessage;
+
+    private async Task HandleLogin()
+    {
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(loginModel.Email) || string.IsNullOrWhiteSpace(loginModel.Password))
+        {
+            errorMessage = "Email and password are required.";
+            return;
+        }
+
+        var adminEmail = Configuration["DefaultAdmin:Email"];
+        var adminPassword = Configuration["DefaultAdmin:Password"];
+
+        if (loginModel.Email == adminEmail && loginModel.Password == adminPassword)
+        {
+            await SessionStorage.SetItemAsync("AccountRole", 0);
+            // Fix the notification call
+            ((CustomAuthStateProvider)AuthStateProvider).NotifyAuthenticationStateChanged();
+            Navigation.NavigateTo("/admin/manageaccount", forceLoad: true);
+            return;
+        }
+
+            Console.WriteLine($"Attempting login with email: {loginModel.Email}");
+
+            var account = await AccountRepository.LoginAsync(loginModel.Email, loginModel.Password);
+
+            if (account == null)
+            {
+                errorMessage = "Email or password is not correct.";
+                return;
+            }
+
+            await SessionStorage.SetItemAsync("AccountId", account.AccountId);
+            await SessionStorage.SetItemAsync("AccountEmail", account.AccountEmail ?? "");
+            await SessionStorage.SetItemAsync("AccountRole", account.AccountRole ?? 0);
+            
+            // Fix the notification call - remove the duplicate line
+            ((CustomAuthStateProvider)AuthStateProvider).NotifyAuthenticationStateChanged();
+            
+            NavigateBasedOnRole(account.AccountRole);
+    }
+
+    private void NavigateBasedOnRole(int? role)
+    {
+        switch (role)
+        {
+            case 2:
+                Navigation.NavigateTo("/news", forceLoad: true);
+                break;
+            case 1:
+                Navigation.NavigateTo("/staff", forceLoad: true);
+                break;
+            default:
+                errorMessage = "Role is not valid.";
+                break;
+        }
+    }
+
+    public class LoginModel
+    {
+      
+        public string Email { get; set; } = string.Empty;
+
+       
+        public string Password { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,174 @@
+﻿@page "/staff/newsarticles/edit/{articleId?}"
+@inject NavigationManager Navigation
+@inject INewsArticleRepository NewsRepo
+@inject ICategoryRepository CategoryRepo
+@inject ITagRepository TagRepo
+@inject ISessionStorageService SessionStorage
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+
+<h1>Edit News Article</h1>
+
+@if (NewsArticle != null && !string.IsNullOrEmpty(NewsArticle.NewsArticleId))
+{
+    <EditForm Model="NewsArticle" OnValidSubmit="SaveArticle" FormName="EditNewsForm">
+        <DataAnnotationsValidator />
+
+        <div class="mb-3">
+            <label class="form-label">Title</label>
+            <InputText class="form-control" @bind-Value="NewsArticle.NewsTitle" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Headline</label>
+            <InputText class="form-control" @bind-Value="NewsArticle.Headline" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Content</label>
+            <InputTextArea class="form-control" @bind-Value="NewsArticle.NewsContent" rows="4" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">News Source</label>
+            <InputText class="form-control" @bind-Value="NewsArticle.NewsSource" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Category</label>
+            <InputSelect class="form-control" @bind-Value="NewsArticle.CategoryId">
+                @foreach (var category in CategoryList)
+                {
+                    <option value="@category.Value">@category.Text</option>
+                }
+            </InputSelect>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Status</label>
+            <InputSelect class="form-control" @bind-Value="NewsArticle.NewsStatus">
+                <option value="false">Inactive</option>
+                <option value="true">Active</option>
+            </InputSelect>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Tags</label>
+            <div>
+                @foreach (var tag in TagList)
+                {
+                    <label class="me-2">
+                        <input type="checkbox" value="@tag.Value" checked="@SelectedTagIds.Contains(int.Parse(tag.Value))"
+                               @onchange="(e) => ToggleTagSelection(int.Parse(tag.Value), e.Value as bool?)" />
+                        @tag.Text
+                    </label>
+                }
+
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <button type="submit" class="btn btn-success">Save</button>
+            <button type="button" class="btn btn-secondary ms-2" @onclick="CancelEdit">Cancel</button>
+        </div>
+    </EditForm>
+}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    function confirmUpdate() {
+        return confirm("Are you sure you want to update this article?");
+    }
+</script>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
+@code {
+    public class DropdownItem
+    {
+        public string Value { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+    }
+
+    [Parameter] public string? ArticleId { get; set; }
+
+    
+    private List<DropdownItem> CategoryList = new();
+    private List<DropdownItem> TagList = new();
+    private NewsArticle NewsArticle { get; set; } = new();
+    private List<int> SelectedTagIds = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var accountRole = await SessionStorage.GetItemAsync<int?>("AccountRole");
+        if (accountRole != 1)
+        {
+            Navigation.NavigateTo("/Error");
+            return;
+        }
+
+        if (firstRender)
+        {
+            await LoadCategoriesAndTags();
+
+            if (!string.IsNullOrEmpty(ArticleId))
+            {
+                await LoadArticle();
+            }
+
+            StateHasChanged();
+        }
+    }
+    private void ToggleTagSelection(int tagId, bool? isChecked)
+    {
+        if (isChecked == true)
+        {
+            if (!SelectedTagIds.Contains(tagId))
+            {
+                SelectedTagIds.Add(tagId);
+            }
+        }
+        else
+        {
+            SelectedTagIds.Remove(tagId);
+        }
+    }
+
+    private async Task LoadCategoriesAndTags()
+    {
+        var categories = await CategoryRepo.GetCategoriesNoPagiAsync();
+        CategoryList = categories.Select(c => new DropdownItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+
+        var tags = await TagRepo.GetAllTagsAsync();
+        TagList = tags.Select(t => new DropdownItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
+    }
+
+    private async Task LoadArticle()
+    {
+        NewsArticle = await NewsRepo.GetNewsArticleByIdAsync(ArticleId);
+        if (NewsArticle != null)
+        {
+            SelectedTagIds = NewsArticle.Tags?.Select(t => t.TagId).ToList() ?? new List<int>();
+        }
+    }
+
+    private async Task SaveArticle()
+    {
+        bool confirmUpdate = await JS.InvokeAsync<bool>("confirmUpdate");
+        if (!confirmUpdate)
+        {
+            return;
+        }
+
+        NewsArticle.ModifiedDate = DateTime.Now;
+        NewsArticle.Tags = TagList
+            .Where(t => SelectedTagIds.Contains(int.Parse(t.Value)))
+            .Select(t => new Tag { TagId = int.Parse(t.Value), TagName = t.Text })
+            .ToList();
+
+        await NewsRepo.UpdateNewsAsync(NewsArticle, SelectedTagIds);
+        Navigation.NavigateTo("/staff/newsarticles");
+    }
+
+    private void CancelEdit() => Navigation.NavigateTo("/staff/newsarticles");
+}

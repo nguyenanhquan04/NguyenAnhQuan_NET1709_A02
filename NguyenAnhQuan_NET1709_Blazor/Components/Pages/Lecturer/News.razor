@@ -1,0 +1,131 @@
+﻿@page "/news"
+@inject INewsArticleRepository NewsArticleRepository
+@inject ISystemAccountRepository AccountRepository
+@rendermode InteractiveServer
+
+@inject NavigationManager Navigation
+
+
+<h1>News Articles</h1>
+
+@if (NewsArticles is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Id</th>
+                <th>Title</th>
+                <th>Headline</th>
+                <th>Created Date</th>
+                <th>Created By</th>
+                <th>Modified Date</th>
+                <th>Updated By</th>
+                <th>Category Name</th>
+                <th>News Source</th>
+                <th>News Content</th>
+                <th>Tags</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var article in NewsArticles)
+            {
+                <tr>
+                    <td>@article.NewsArticleId</td>
+                    <td>@article.NewsTitle</td>
+                    <td>@article.Headline</td>
+                    <td>@article.CreatedDate?.ToString("yyyy-MM-dd")</td>
+                    <td>@article.CreatedBy?.AccountName</td>
+                    <td>@article.ModifiedDate?.ToString("yyyy-MM-dd")</td>
+                    <td>@(UpdatedByNames.ContainsKey(article.UpdatedById ?? 0) ? UpdatedByNames[article.UpdatedById.Value] : "Unknown")</td>
+                    <td>@article.Category?.CategoryName</td>
+                    <td>@article.NewsSource</td>
+                    <td>@article.NewsContent</td>
+                    <td>
+                        @if (article.Tags.Any())
+                        {
+                            @foreach (var tag in article.Tags)
+                            {
+                                <span class="badge bg-primary">@tag.TagName</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">No tags available</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="pagination">
+        <button @onclick="PreviousPage" disabled="@(_currentPage == 1)" class="btn btn-outline-primary">Previous</button>
+        <span>Page @_currentPage of @_totalPages</span>
+        <button @onclick="NextPage" disabled="@(_currentPage == _totalPages)" class="btn btn-outline-primary">Next</button>
+    </div>
+}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet" />
+@code {
+    private List<NewsArticle> NewsArticles = new();
+    private Dictionary<short, string> UpdatedByNames = new();
+    private int _currentPage = 1;
+    private int _totalPages;
+    private const int PageSize = 5;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadArticles();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadArticles()
+    {
+        var (articles, totalPages) = await NewsArticleRepository.GetActiveNewsArticlesAsync(_currentPage, PageSize);
+        NewsArticles = articles;
+        _totalPages = totalPages;
+
+        var updatedByIds = NewsArticles
+            .Where(a => a.UpdatedById.HasValue)
+            .Select(a => a.UpdatedById.Value)
+            .Distinct()
+            .ToList();
+
+        foreach (var id in updatedByIds)
+        {
+            var account = await AccountRepository.GetAccountById(id);
+            UpdatedByNames[id] = account?.AccountName ?? "Unknown";
+        }
+    }
+
+    private async Task PreviousPage()
+    {
+        if (_currentPage > 1)
+        {
+            _currentPage--;
+            await LoadArticles();
+        }
+    }
+
+    private async Task NextPage()
+    {
+        if (_currentPage < _totalPages)
+        {
+            _currentPage++;
+            await LoadArticles();
+        }
+    }
+    private async Task Login()
+    {
+       
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}
